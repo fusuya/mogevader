@@ -1,2 +1,2 @@
 # mogevader
-もげべーだー
+require opengl

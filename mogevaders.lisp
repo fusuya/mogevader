@@ -63,7 +63,7 @@
 (defclass player ()
   ((towers     :initarg :towers     :initform nil :accessor towers)
    (hp         :initarg :hp         :initform 10  :accessor hp)
-   (wave       :initarg :wave       :initform 1   :accessor wave)
+   (wave       :initarg :wave       :initform 0   :accessor wave)
    (score      :initarg :score      :initform 0   :accessor score)
    (money      :initarg :money      :initform 0   :accessor money)
    (money-c    :initarg :money-c    :initform 0   :accessor money-c)
@@ -175,21 +175,21 @@
     ((>= (wave *player*) (random 40))
      (make-instance 'invader :pos (gamekit:vec2 (- (* x 32 1.2) 320)
 						(+ 600 (* y 32 1.25)))
-			     :size (vec2 32 32) :atk-c 60 :money 20
+			     :size (vec2 32 32) :atk-c 60 :money 15
 			     :img-pos (vec2 0 0) :hp (+ (wave *player*) 3)
 			     :maxhp (+ (wave *player*) 3)
 			     :size/2 (vec2 16 16)))
     ((>= (wave *player*) (random 30))
      (make-instance 'invader :pos (gamekit:vec2 (- (* x 32 1.2) 320)
 						(+ 600 (* y 32 1.25)))
-			     :size (vec2 32 32) :atk-c 60 :money 15
+			     :size (vec2 32 32) :atk-c 60 :money 10
 			     :img-pos (vec2 0 32) :hp (+ (wave *player*) 2)
 			     :maxhp (+ (wave *player*) 2)
 			     :size/2 (vec2 16 16)))
     (t
      (make-instance 'invader :pos (gamekit:vec2 (- (* x 32 1.2) 320)
 						(+ 600 (* y 32 1.25)))
-			     :size (vec2 32 32) :atk-c 60 :money 10
+			     :size (vec2 32 32) :atk-c 60 :money 5
 			     :img-pos (vec2 0 64) :hp (+ (wave *player*) 1)
 			     :maxhp (+ (wave *player*) 1)
 			     :size/2 (vec2 16 16)))))
@@ -198,6 +198,9 @@
 ;;敵作成
 (defun create-invaders ()
   (with-slots (invaders) *invaders*
+    (incf (wave *player*))
+    (when (zerop (mod (wave *player*) 2))
+      (incf (bullet-max *invaders*)))
     (let* ((wave (make-instance 'invader-wave)))
       ;;        (invader-x 10))
       ;;(setf invaders (make-array (* invader-y invader-x)))
@@ -206,7 +209,6 @@
 		  (push
 		   (random-create-invader x y)
 		   (invader-list wave))))
-      (incf (wave *player*))
       (setf (invader-max wave) (length (invader-list wave)))
       (push wave invaders))))
 
@@ -341,7 +343,9 @@
 ;;キャノンアップグレード
 (defmethod  tower-upgrade ((tower canon))
   (incf (lv tower))
-  (incf (power tower))
+  (if (evenp (lv tower))
+      (incf (power tower))
+      (decf (interval tower) 10))
   (incf (money tower) 15))
 
 ;;ミサイルアップグレード
@@ -363,8 +367,8 @@
 ;;壁アップグレード
 (defmethod  tower-upgrade ((tower wall))
   (incf (lv tower))
-  (incf (maxhp tower))
-  (incf (hp tower))
+  (incf (maxhp tower) (floor (money tower) 10))
+  (incf (hp tower) (floor (money tower) 10))
   (incf (money tower) 10)
   (cond
     ((>= (hp tower) 3)
@@ -457,7 +461,8 @@
 
 (defun draw-player-status ()
   (draw-text (format nil "MONEY:~d" (money *player*)) (vec2 810 320) :fill-color *white* :font *font32*)
-   (draw-text (format nil "HP:~d" (hp *player*)) (vec2 810 280) :fill-color *white* :font *font32*))
+  (draw-text (format nil "HP:~d" (hp *player*)) (vec2 810 290) :fill-color *white* :font *font32*)
+  (draw-text (format nil "WAVE:~d" (wave *player*)) (vec2 810 260) :fill-color *white* :font *font32*))
 
 
 (defun draw-explain-img (img-id w)
@@ -649,10 +654,11 @@
 ;;インベーダー弾
 (defmethod add-bullet ((e invader))
   (with-slots (pos size/2) e
-    (let* ((r 6)
-           (blt (make-instance 'invader-blt :pos (vec2 (+ (x pos) (x size/2)) (- (y pos) r))
-                               :r r :spd (vec2 0 -2) :color *red*)))
-      (push blt (bullets *invaders*)))))
+    (when (>= *game-w* (x pos) 0)
+      (let* ((r 6)
+	     (blt (make-instance 'invader-blt :pos (vec2 (+ (x pos) (x size/2)) (- (y pos) r))
+					      :r r :spd (vec2 0 -2) :color *red*)))
+	(push blt (bullets *invaders*))))))
 
 ;;キャノン弾
 (defmethod add-bullet ((tower canon))
@@ -860,22 +866,24 @@
 		      :do
 			 (if (eq (state e) :dead) ;;deadの奴消す
 			     (progn
-			       (delete-obj e invader-list))
+			       (delete-obj e invader-list)
+			       (setf invader-max (length invader-list)))
 			     (progn
 			       (when (> (hit-cd e) 0)
 				 (incf (hit-cd e))
 				 (when (= (hit-cd e) *hit-cd*)
 				   (setf (hit-cd e) 0)))
-			       (when (and ;;(null moved?)
+			       (when (and (null moved?)
 					  (= num current)
 					  (eq (state e) :alive))
-				 ;;(update e)
-				 ;;(setf moved? t)
+				 (incf current)
+				 (setf moved? t)
 				 (update-invader e wave)
 				 (when (and (>= (random (atk-c e)) 59)
 					    (> bullet-max (length bullets)))
 				   (add-bullet e))))))
-		(incf current) ;;次に動くインベーダーの番棒
+		;;(incf current) ;;次に動くインベーダーの番棒
+		(setf moved? nil)
 		(when (>= current invader-max)
 		  (setf current 0
 			invader-max (length invader-list)
@@ -923,10 +931,9 @@
 (defun add-invaders ()
   (with-slots (invaders) *invaders*
     (cond
-      ((null invaders)
+      ((null invaders) ;;インベーダーいない時
        (create-invaders))
-      ((and invaders
-	    (>= 440 (y (pos (car (invader-list (car invaders)))))))
+      ((>= 440 (y (pos (car (invader-list (car invaders)))))) ;;インベーダーが440以下に来た時
        (create-invaders)))))
     ;; (incf frame)
     ;; (when (zerop (mod frame 2000))
@@ -943,8 +950,9 @@
   (update-explosions)
   ;;(hit-invaders-bullets)
   (update-money)
-  (add-invaders)
+  
   (delete-invader-wave)
+  (add-invaders)
   (incf-frame))
   ;;(delete-bullets))
 

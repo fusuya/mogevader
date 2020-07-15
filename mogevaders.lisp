@@ -22,6 +22,7 @@
 (defparameter *canon* nil)
 (defparameter *bullets* nil)
 (defparameter *invaders* nil)
+(defvar *invader-max* 50)
 (defvar *invader-size* (gamekit:vec2 32 32)) ;;(w h)
 (defvar *cursor* nil)
 (defparameter *sample-size* (vec2 32 32))
@@ -33,6 +34,9 @@
 (defvar *font24* nil)
 (defvar *font28* nil)
 (defvar *font32* nil)
+(defvar *font64* nil)
+(defvar *font128* nil)
+(defvar *font300* nil)
 (defvar *hit-cd* 30)
 
 (defvar *canon-explain* "HOGE")
@@ -61,15 +65,16 @@
 
 
 (defclass player ()
-  ((towers     :initarg :towers     :initform nil :accessor towers)
-   (hp         :initarg :hp         :initform 10  :accessor hp)
-   (wave       :initarg :wave       :initform 0   :accessor wave)
-   (score      :initarg :score      :initform 0   :accessor score)
-   (money      :initarg :money      :initform 0   :accessor money)
-   (money-c    :initarg :money-c    :initform 0   :accessor money-c)
-   (money-t    :initarg :money-t    :initform 60  :accessor money-t)
-   (explosions :initarg :explosions :initform nil :accessor explosions)
-   (bullets    :initarg :bullets    :initform nil :accessor bullets)))
+  ((towers     :initarg :towers     :initform nil    :accessor towers)
+   (hp         :initarg :hp         :initform 10     :accessor hp)
+   (wave       :initarg :wave       :initform 1      :accessor wave)
+   (state      :initarg :state      :initform :title :accessor state)
+   (score      :initarg :score      :initform 0      :accessor score)
+   (money      :initarg :money      :initform 0      :accessor money)
+   (money-c    :initarg :money-c    :initform 0      :accessor money-c)
+   (money-t    :initarg :money-t    :initform 60     :accessor money-t)
+   (explosions :initarg :explosions :initform nil    :accessor explosions)
+   (bullets    :initarg :bullets    :initform nil    :accessor bullets)))
 
 
 (defclass circle ()
@@ -101,6 +106,7 @@
 
 (defclass invader (tower rectan)
   ((state   :initarg :state   :initform :alive       :accessor state)
+   (race    :initarg :race    :initform :alive       :accessor race)
    (shot    :initarg :shot    :initform nil          :accessor shot)
    (img-pos :initarg :img-pos :initform (vec2 0 0)   :accessor img-pos)))
 
@@ -109,6 +115,7 @@
    (start-turn      :initarg :start-turn    :initform nil :accessor start-turn)
    (turn        :initarg :turn        :initform nil          :accessor turn)
    (current     :initarg :current     :initform 0            :accessor current)
+   (move-frame  :initarg :move-frame  :initform 0            :accessor move-frame)
    (moved?      :initarg :moved?      :initform nil          :accessor moved?)
    (invader-max :initarg :invader-max :initform 0            :accessor invader-max)
    (spd         :initarg :spd         :initform (vec2 10 0)  :accessor spd)))
@@ -159,62 +166,74 @@
 
 (defparameter *test-wall* nil)
 			       		       
-				 
+(defun set-font ()
+  *font24* (make-font :mplus 24)
+  *font28* (make-font :mplus 28)
+  *font32* (make-font :mplus 32)
+  *font64* (make-font :mplus 64)
+  *font128* (make-font :mplus 128)
+  *font300* (make-font :mplus 300))
 
 (defun init-data ()
   (setf *invaders* (make-instance 'invaders)
         *cursor* (make-instance 'cursor)
-        *player* (make-instance 'player :hp 10 :money 100)
-        *font24* (make-font :mplus 24)
-        *font28* (make-font :mplus 28)
-        *font32* (make-font :mplus 32)))
+        *player* (make-instance 'player :hp 10 :money 100 :state :title)))
+        
 
 
-(defun random-create-invader (x y)
+(defun random-create-invader (x y lv)
   (cond
-    ((>= (wave *player*) (random 40))
+    ((>= lv (random 40))
      (make-instance 'invader :pos (gamekit:vec2 (- (* x 32 1.2) 320)
-						(+ 600 (* y 32 1.25)))
-			     :size (vec2 32 32) :atk-c 60 :money 15
-			     :img-pos (vec2 0 0) :hp (+ (wave *player*) 3)
-			     :maxhp (+ (wave *player*) 3)
+						(+ 550 (* y 32 1.25)))
+			     :size (vec2 32 32) :atk-c 150 :money 15
+			     :img-pos (vec2 0 0) :hp (+ lv 3)
+			     :maxhp (+ lv 3) :race :ika
 			     :size/2 (vec2 16 16)))
-    ((>= (wave *player*) (random 30))
+    ((>= lv (random 30))
      (make-instance 'invader :pos (gamekit:vec2 (- (* x 32 1.2) 320)
-						(+ 600 (* y 32 1.25)))
-			     :size (vec2 32 32) :atk-c 60 :money 10
-			     :img-pos (vec2 0 32) :hp (+ (wave *player*) 2)
-			     :maxhp (+ (wave *player*) 2)
+						(+ 550 (* y 32 1.25)))
+			     :size (vec2 32 32) :atk-c 200 :money 10
+			     :img-pos (vec2 0 32) :hp (+ lv 2)
+			     :maxhp (+ lv 2) :race :tako
 			     :size/2 (vec2 16 16)))
     (t
      (make-instance 'invader :pos (gamekit:vec2 (- (* x 32 1.2) 320)
-						(+ 600 (* y 32 1.25)))
-			     :size (vec2 32 32) :atk-c 60 :money 5
-			     :img-pos (vec2 0 64) :hp (+ (wave *player*) 1)
-			     :maxhp (+ (wave *player*) 1)
+						(+ 550 (* y 32 1.25)))
+			     :size (vec2 32 32) :atk-c 250 :money 5
+			     :img-pos (vec2 0 64) :hp (+ lv 1)
+			     :maxhp (+ lv 1) :race :crab
 			     :size/2 (vec2 16 16)))))
      
 
 ;;敵作成
 (defun create-invaders ()
   (with-slots (invaders) *invaders*
-    (incf (wave *player*))
-    (when (zerop (mod (wave *player*) 2))
-      (incf (bullet-max *invaders*)))
-    (let* ((wave (make-instance 'invader-wave)))
+    ;;(incf (wave *player*))
+    (let* ((lv (wave *player*))
+	   (invader-num (min 50 (* (wave *player*) 10)))
+	   (wave (make-instance 'invader-wave :spd (vec2 (+ 22 lv) 0)
+				:move-frame (floor *invader-max* invader-num))))
       ;;        (invader-x 10))
       ;;(setf invaders (make-array (* invader-y invader-x)))
       (loop :for n :from 0 :below (min 50 (* (wave *player*) 10)) ;;敵の数
             :do (multiple-value-bind (y x) (floor n 10) 
 		  (push
-		   (random-create-invader x y)
+		   (random-create-invader x y lv)
 		   (invader-list wave))))
-      (setf (invader-max wave) (length (invader-list wave)))
+      (setf (invader-max wave) (length (invader-list wave))
+	    (bullet-max *invaders*) (* lv 2))
       (push wave invaders))))
 
 
+(defmethod hit? ((a circle) (b circle))
+  (let* ((a-x (x (pos a))) (a-y (y (pos a)))
+	 (b-x (x (pos b))) (b-y (y (pos b)))
+	 (a-r (r a)) (b-r (r b)))
+    (>= (+ a-r b-r) (sqrt (+ (expt (- b-x a-x) 2)
+			     (expt (- b-y a-y) 2))))))
 
-(defmethod hit? ((b rectan) e)
+(defmethod hit? ((b rectan) (e rectan))
   (let* ((e-x1 (x (pos e))) 
          (e-x2 (+ e-x1 (x (size e))))
          (e-y1 (y (pos e)))
@@ -229,7 +248,7 @@
          (<= e-y1 b-y2))))
 
 ;;
-(defmethod hit? ((b circle) e)
+(defmethod hit? ((b circle) (e rectan))
   (with-slots (pos size) e
     (let* ((e-x1 (gamekit:x pos)) (e-x2 (+ e-x1 (x size)))
                                   (e-y1 (gamekit:y pos)) (e-y2 (+ e-y1 (y size)))
@@ -389,30 +408,40 @@
 
 (defmethod gamekit:post-initialize ((app mogevader))
   (init-data)
+  (set-font)
   (create-invaders)
   (gamekit:bind-button :escape :pressed
                        (lambda ()
                          (gamekit:stop)))
   (bind-button :mouse-right :pressed
 	       (lambda ()
-		 (with-slots (selected now-tower) *cursor*
-		   (cond
-		     (selected
-		      (setf selected nil))
-		     ((and now-tower
-			   (>= (money *player*) (money now-tower)))
-		      (decf (money *player*) (money now-tower))
-		      (tower-upgrade now-tower))))))
+		 (case (state *player*)
+		   (:title)
+		   (:playing
+		    (with-slots (selected now-tower) *cursor*
+		      (cond
+			(selected
+			 (setf selected nil))
+			((and now-tower
+			      (>= (money *player*) (money now-tower)))
+			 (decf (money *player*) (money now-tower))
+			 (tower-upgrade now-tower)))))
+		   (:gameover
+		    (init-data)
+		    (setf (state *player*) :playing)))))
   (gamekit:bind-button :mouse-left :pressed
                        (lambda ()
-                         (with-slots (selected now add?) *cursor*
-                           (cond
-			     ((and selected
-				    add?
-				    (check-tower-border))
-			      (add-tower))
-			     ((and now (null selected))
-			      (select-tower now))))))
+			 (case (state *player*)
+			   (:title (setf (state *player*) :playing))
+			   (:playing
+			    (with-slots (selected now add?) *cursor*
+			      (cond
+				((and selected
+				      add?
+				      (check-tower-border))
+				 (add-tower))
+				((and now (null selected))
+				 (select-tower now))))))))
   (gamekit:bind-cursor (lambda (x y)
                          (cursor-now x y))))
 ;;(gamekit:y pos) y)))))
@@ -462,7 +491,8 @@
 (defun draw-player-status ()
   (draw-text (format nil "MONEY:~d" (money *player*)) (vec2 810 320) :fill-color *white* :font *font32*)
   (draw-text (format nil "HP:~d" (hp *player*)) (vec2 810 290) :fill-color *white* :font *font32*)
-  (draw-text (format nil "WAVE:~d" (wave *player*)) (vec2 810 260) :fill-color *white* :font *font32*))
+  (draw-text (format nil "WAVE:~d" (wave *player*)) (vec2 810 260) :fill-color *white* :font *font32*)
+  (draw-text (format nil "SCORE:~d" (score *player*)) (vec2 810 230) :fill-color *white* :font *font32*))
 
 
 (defun draw-explain-img (img-id w)
@@ -621,19 +651,18 @@
 ;;色々境界線
 (defun border-lines ()
   (draw-line *border-s* *border-e* (vec4 1 1 1 1) :thickness 2)
-  (draw-line (vec2 800 250) (vec2 *window-w* 250) (vec4 1 1 1 1) :thickness 2)
+  (draw-line (vec2 800 210) (vec2 *window-w* 210) (vec4 1 1 1 1) :thickness 2)
   (draw-line (vec2 800 350) (vec2 *window-w* 350) (vec4 1 1 1 1) :thickness 2)
   (draw-line (vec2 800 480) (vec2 *window-w* 480) (vec4 1 1 1 1) :thickness 2)
   ;;タワー置ける境界線
   (draw-line (vec2 0 150) (vec2 800 150) (vec4 1 1 1 1) :thickness 2))
-  
 
-;;
-(defmethod gamekit:draw ((app mogevader))
+
+(defun playing-draw ()
   (gamekit:draw-rect (gamekit:vec2 0 0) (gamekit:viewport-width) (gamekit:viewport-height)
-                     :fill-paint (gamekit:vec4 0 0 0 1)) ;;TODO
+		     :fill-paint (gamekit:vec4 0 0 0 1)) ;;TODO
   (gamekit:scale-canvas (/ (gamekit:viewport-width) *window-w*)
-                        (/ (gamekit:viewport-height) *window-h*))
+			(/ (gamekit:viewport-height) *window-h*))
   (border-lines)
   (draw-sample)
   (draw-cursor)
@@ -650,6 +679,33 @@
   (draw-bullets)
   (draw-invaders)
   (draw-explosions))
+
+;;タイトル画面
+(defun title-draw ()
+  (gamekit:draw-rect (gamekit:vec2 0 0) (gamekit:viewport-width) (gamekit:viewport-height)
+		     :fill-paint (gamekit:vec4 0 0 0 1)) ;;TODO
+  (draw-text "MOGEVADER" (vec2 30 500) :fill-color *white* :font *font300*)
+  (draw-text "MOGEVADER" (vec2 35 500) :fill-color *red* :font *font300*)
+  (draw-text "CLICK START" (vec2 380 200) :fill-color *white* :font *font64*))
+
+;;ゲームオーバー画面
+(defun gameover-draw ()
+  (gamekit:draw-rect (gamekit:vec2 0 0) (gamekit:viewport-width) (gamekit:viewport-height)
+		     :fill-paint (gamekit:vec4 0 0 0 1)) ;;TODO
+  (draw-text "GAME OVER" (vec2 30 500) :fill-color *red* :font *font300*)
+  (draw-text (format nil "SCRE : ~d" (score *player*))
+	     (vec2 250 300) :fill-color *yellow* :font *font128*)
+  (draw-text "RIGHT CLICK : RESTART"
+	     (vec2 250 200) :fill-color *green* :font *font64*)
+  (draw-text "ESC : GAME END"
+	     (vec2 250 150) :fill-color *blue* :font *font64*))
+;;
+(defmethod gamekit:draw ((app mogevader))
+  (case (state *player*)
+    (:title (title-draw))
+    (:playing (playing-draw))
+    (:gameover (gameover-draw))))
+     
 
 ;;インベーダー弾
 (defmethod add-bullet ((e invader))
@@ -714,7 +770,24 @@
   (when (= (hp tower) 0)
     (delete-obj tower (towers *player*))))
 	    
+;;インベーダー弾とキャノン弾
+(defmethod bullet-hit-action ((b invader-blt) (c canon-blt))
+  (delete-obj b (bullets *invaders*))
+  (delete-obj c (bullets *player*)))
 
+;;インベーダー弾とbeam弾
+(defmethod bullet-hit-action ((b invader-blt) (c beam-blt))
+  (delete-obj b (bullets *invaders*)))
+
+;;インベーダー弾とmissile弾
+(defmethod bullet-hit-action ((b invader-blt) (c missile-blt))
+  (delete-obj b (bullets *invaders*))
+  (let* ((e-power (max 1 (floor (power c) 2)))
+	 (ex (make-instance 'explosion :pos (vec2 (+ (x (pos c)) (x (size/2 c)))
+						  (+ (y (pos c)) (y (size c))))
+				       :r (r c) :power e-power)))
+    (push ex (explosions *player*))
+    (delete-obj c (bullets *player*))))
 
 
 ;;インベーダーの弾
@@ -723,17 +796,28 @@
     (incf (y pos) (y spd))
     (if (<= (+ (y pos) r) 0) ;;画面外だったら消す
 	(progn (delete-obj b (bullets *invaders*))
-	       (decf (hp *player*)))
-	(loop :for tower :in (towers *player*)
-	      :do (when (hit? b tower)
-		    (bullet-hit-action b tower))))))
+	       (decf (hp *player*))
+	       (when (<= (hp *player*) 0)
+		 (setf (state *player*) :gameover)))
+	(progn
+	  (loop :for tower :in (towers *player*)
+		:do (when (hit? b tower)
+		      (bullet-hit-action b tower)))
+	  (loop :for blt :in (bullets *player*)
+		:do (when (hit? b blt)
+		      (bullet-hit-action b blt)))))))
           
 
 (defun bullet-hit-common-action (b e)
   (decf (hp e) (power b))
   (when (>= 0 (hp e)) 
     (setf (state e) :dead)
-    (incf (money *player*) (money e))))
+    (incf (money *player*) (money e))
+    (case (race e)
+      (:ika (Incf (score *player*) 30))
+      (:tako (Incf (score *player*) 20))
+      (:crab (Incf (score *player*) 10)))))
+      
 
 
 ;;キャノン弾がインベーダに当たった時
@@ -775,7 +859,7 @@
 (defmethod update ((b bullet))
   (with-slots (pos spd) b
     (incf (y pos) (y spd))
-    (if (>= (y pos) *window-h*)
+    (if (>= (y pos) *window-h*) ;;ウィンドウの外出たら消す
 	(delete-obj b (bullets *player*))
 	(loop :for wave :in (invaders *invaders*)
 	      :do (with-slots (invader-list) wave
@@ -855,44 +939,52 @@
 		     (>= 0 (+ (x pos) (x spd)))))
 	(setf turn t)))))
 	;; (setf (x spd) (- (x spd))
-	;;       (y spd) -10)))))
+;;       (y spd) -10)))))
+
+(defun delete-dead-invaders (wave)
+  (with-slots (invader-list) wave
+    (loop :for e :in invader-list
+       :do (when (eq (state e) :dead)
+	     (delete-obj e invader-list)))))
 
 (defun update-invaders ()
   (with-slots (invaders bullets blt-c bullet-max frame) *invaders*
     (loop :for wave :in invaders
-	  :do (with-slots (invader-list current invader-max turn spd moved?) wave
-		(loop :for e :in invader-list
-		      :for num :from 0
-		      :do
-			 (if (eq (state e) :dead) ;;deadの奴消す
-			     (progn
-			       (delete-obj e invader-list)
-			       (setf invader-max (length invader-list)))
-			     (progn
-			       (when (> (hit-cd e) 0)
-				 (incf (hit-cd e))
-				 (when (= (hit-cd e) *hit-cd*)
-				   (setf (hit-cd e) 0)))
-			       (when (and (null moved?)
-					  (= num current)
-					  (eq (state e) :alive))
-				 (incf current)
-				 (setf moved? t)
-				 (update-invader e wave)
-				 (when (and (>= (random (atk-c e)) 59)
-					    (> bullet-max (length bullets)))
-				   (add-bullet e))))))
-		;;(incf current) ;;次に動くインベーダーの番棒
-		(setf moved? nil)
-		(when (>= current invader-max)
-		  (setf current 0
-			invader-max (length invader-list)
-			(y spd) 0)
-		  ;;(set-alive-invader-shot)
-		  (when turn
-		    (setf (x spd) (- (x spd))
-		  	  (y spd) -20
-		  	  turn nil)))))))
+       :do (with-slots (invader-list current invader-max turn spd moved?) wave
+	     (loop :for e :in invader-list
+		:for num :from 0
+		:do (cond
+		      ((and (eq (state e) :dead)
+			    (= num current))
+		       (incf current))
+		      ((eq (state e) :alive)
+		       (when (> (hit-cd e) 0)
+			 (incf (hit-cd e))
+			 (when (= (hit-cd e) *hit-cd*)
+			   (setf (hit-cd e) 0)))
+		       (when (and (< (random (atk-c e)) 1)
+				  (zerop (mod frame 3))
+				  (> bullet-max (length bullets)))
+			 (add-bullet e))
+		       (when (and (null moved?)
+				  (= num current)
+				  (zerop (mod frame (floor *invader-max* invader-max))))
+			 (incf current)
+			 (setf moved? t)
+			 (update-invader e wave)))))
+	     ;;(incf current) ;;次に動くインベーダーの番棒
+	     (setf moved? nil)
+	     (when (>= current invader-max)
+	       (delete-dead-invaders wave)
+	       (setf current 0
+		     invader-max (length invader-list)
+		     (y spd) 0)
+	       
+	       ;;(set-alive-invader-shot)
+	       (when turn
+		 (setf (x spd) (- (x spd))
+		       (y spd) -32
+		       turn nil)))))))
 
 
 (defun update-bullets ()
@@ -931,9 +1023,9 @@
 (defun add-invaders ()
   (with-slots (invaders) *invaders*
     (cond
-      ((null invaders) ;;インベーダーいない時
-       (create-invaders))
-      ((>= 440 (y (pos (car (invader-list (car invaders)))))) ;;インベーダーが440以下に来た時
+      ((or (null invaders)
+	   (>= 440 (y (pos (car (invader-list (car invaders)))))))
+       (incf (wave *player*))
        (create-invaders)))))
     ;; (incf frame)
     ;; (when (zerop (mod frame 2000))
@@ -944,16 +1036,17 @@
   (incf (frame *invaders*)))
 
 (defmethod gamekit:act ((app mogevader))
-  (update-bullets)
-  (update-invaders)
-  (update-towers)
-  (update-explosions)
-  ;;(hit-invaders-bullets)
-  (update-money)
-  
-  (delete-invader-wave)
-  (add-invaders)
-  (incf-frame))
+  (when (eq (state *player*) :playing)
+    (update-bullets)
+    (update-invaders)
+    (update-towers)
+    (update-explosions)
+    ;;(hit-invaders-bullets)
+    (update-money)
+    
+    (delete-invader-wave)
+    (add-invaders)
+    (incf-frame)))
   ;;(delete-bullets))
 
 ;;

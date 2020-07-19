@@ -29,6 +29,7 @@
 (defparameter *canon-pos* (vec2 810 20))
 (defparameter *missile-pos* (vec2 850 20))
 (defparameter *beam-pos* (vec2 890 20))
+(defparameter *factory-pos* (vec2 930 20))
 (defparameter *wall-pos* (vec2 810 60))
 (defvar *player* nil)
 (defvar *font24* nil)
@@ -40,6 +41,10 @@
 (defvar *hit-cd* 30)
 
 (defvar *canon-explain* "HOGE")
+(defvar *canon-max* 20)
+(defvar *missile-max* 10)
+(defvar *beam-max* 10)
+
 
 (gamekit:register-resource-package :keyword "img/")
 (gamekit:define-image :crab "crab.png")
@@ -47,6 +52,7 @@
 (gamekit:define-image :canon "canon.png")
 (gamekit:define-image :missile "missile.png")
 (gamekit:define-image :invaders "invaders.png")
+(gamekit:define-image :factory "factory.png")
 (define-image :ms-explosion "ms-explosion.png")
 (define-image :beam "beam.png")
 (define-image :wall "wall.png")
@@ -66,6 +72,8 @@
 
 (defclass player ()
   ((towers     :initarg :towers     :initform nil    :accessor towers)
+   (tower-num  :initarg :tower-num  :initform '(:canon 0 :missile 0 :beam 0)
+	       :accessor tower-num)
    (hp         :initarg :hp         :initform 10     :accessor hp)
    (wave       :initarg :wave       :initform 1      :accessor wave)
    (state      :initarg :state      :initform :title :accessor state)
@@ -93,6 +101,8 @@
    (power    :initarg :power    :initform 1 :accessor power)
    (atk-c    :initarg :atk-c    :initform 0 :accessor atk-c)))
 
+(defclass factory (tower rectan)
+  ((inc-money :initarg :inc-money :initform 0.3 :accessor inc-money)))
 
 (defclass canon (tower rectan)
   ())
@@ -167,12 +177,12 @@
 (defparameter *test-wall* nil)
 			       		       
 (defun set-font ()
-  *font24* (make-font :mplus 24)
-  *font28* (make-font :mplus 28)
-  *font32* (make-font :mplus 32)
-  *font64* (make-font :mplus 64)
-  *font128* (make-font :mplus 128)
-  *font300* (make-font :mplus 300))
+  (setf *font24* (make-font :mplus 24)
+	*font28* (make-font :mplus 28)
+	*font32* (make-font :mplus 32)
+	*font64* (make-font :mplus 64)
+	*font128* (make-font :mplus 128)
+	*font300* (make-font :mplus 300)))
 
 (defun init-data ()
   (setf *invaders* (make-instance 'invaders)
@@ -211,12 +221,12 @@
   (with-slots (invaders) *invaders*
     ;;(incf (wave *player*))
     (let* ((lv (wave *player*))
-	   (invader-num (min 50 (* (wave *player*) 10)))
+	   (invader-num (min 100 (* (wave *player*) 10)))
 	   (wave (make-instance 'invader-wave :spd (vec2 (+ 22 lv) 0)
 				:move-frame (floor *invader-max* invader-num))))
       ;;        (invader-x 10))
       ;;(setf invaders (make-array (* invader-y invader-x)))
-      (loop :for n :from 0 :below (min 50 (* (wave *player*) 10)) ;;敵の数
+      (loop :for n :from 0 :below invader-num ;;敵の数
             :do (multiple-value-bind (y x) (floor n 10) 
 		  (push
 		   (random-create-invader x y lv)
@@ -372,7 +382,7 @@
   (incf (lv tower))
   (if (evenp (lv tower))
       (incf (power tower))
-      (incf (r tower) 10))
+      (incf (r tower) 20))
   (incf (money tower) 20))
 
 ;;ビームアップグレード
@@ -389,6 +399,7 @@
   (incf (maxhp tower) (floor (money tower) 10))
   (incf (hp tower) (floor (money tower) 10))
   (incf (money tower) 10)
+  ;;(setf (hp tower) (maxhp tower))
   (cond
     ((>= (hp tower) 3)
      (setf (x (img-pos tower)) 0
@@ -405,6 +416,16 @@
     (and (>= (- (x *tower-border-e*) (x (size/2 selected))) (x pos) (+ (x *tower-border-s*) (x (size/2 selected))))
 	 (>= (- (y *tower-border-e*) (y (size/2 selected))) (y pos) (y (size/2 selected))))))
 
+;;nowの場に出てる数
+(defun check-tower-num (now)
+  (cond
+    ((eq (type-of now) 'canon)
+     (> *canon-max* (getf (tower-num *player*) :canon)))
+    ((eq (type-of now) 'missile)
+     (> *missile-max* (getf (tower-num *player*) :missile)))
+    ((eq (type-of now) 'beam )
+     (> *beam-max* (getf (tower-num *player*) :beam)))
+    (t t)))
 
 (defmethod gamekit:post-initialize ((app mogevader))
   (init-data)
@@ -428,6 +449,7 @@
 			 (tower-upgrade now-tower)))))
 		   (:gameover
 		    (init-data)
+		    (create-invaders)
 		    (setf (state *player*) :playing)))))
   (gamekit:bind-button :mouse-left :pressed
                        (lambda ()
@@ -440,7 +462,8 @@
 				      add?
 				      (check-tower-border))
 				 (add-tower))
-				((and now (null selected))
+				((and now (null selected)
+				      (check-tower-num now))
 				 (select-tower now))))))))
   (gamekit:bind-cursor (lambda (x y)
                          (cursor-now x y))))
@@ -458,6 +481,7 @@
     (draw-image *canon-pos* :canon)
     (draw-image *missile-pos* :missile)
     (draw-image *beam-pos* :beam)
+    (draw-image *factory-pos* :factory)
     (draw-image *wall-pos* :wall :origin (vec2 0 0) :width 32 :height 16)
     (cond
       (now
@@ -541,15 +565,28 @@
 
 ;;wall説明
 (defmethod tower-explain ((tower wall))
-  (with-slots (hp money size) tower
+  (with-slots (hp money size lv) tower
     (draw-explain-img :wall (x size))
     (macrolet ((hoge (a) `(decf ,a 30)))
       (let ((a 740))
 	(draw-text (format nil "MONEY:~d" money) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
+	(draw-text (format nil "Lv:~d" lv) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
 	(draw-text (format nil "NAME:WALL") (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
 	(draw-text (format nil "HP:~D" hp) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
 	(draw-text "NO ATTACK" (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
 	(draw-text (format nil "GUARD ~d times" hp) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)))))
+
+;;factory説明
+(defmethod tower-explain ((tower factory))
+  (with-slots (hp money size lv hit-cd atk-c) tower
+    (draw-explain-img :wall (x size))
+    (macrolet ((hoge (a) `(decf ,a 30)))
+      (let ((a 740))
+	(draw-text (format nil "MONEY:~d" money) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
+	(draw-text (format nil "Lv:~d" lv) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
+	(draw-text (format nil "NAME:FACTORY") (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
+	(draw-text "NO ATTACK" (vec2 810 (hoge a)) :fill-color *white* :font *font32*)
+	(draw-text (format nil "+ ~d/s MONEY" atk-c) (vec2 810 (hoge a)) :fill-color *white* :font *font32*)))))
 
 
 (defun middle-explain (str1 &key (str2 nil) (str3 nil) (color *white*) (font *font32*))
@@ -558,7 +595,15 @@
     (draw-text str2 (vec2 810 410) :fill-color color :font font))
   (when str3
     (draw-text str2 (vec2 810 370) :fill-color color :font font)))
-  
+
+
+(defun draw-tower-num ()
+  (draw-text (format nil "canon ~d/20" (getf (tower-num *player*) :canon))
+	     (vec2 810 450) :fill-color *white* :font *font32*)
+  (draw-text (format nil "missile ~d/10" (getf (tower-num *player*) :missile))
+	     (vec2 810 420) :fill-color *white* :font *font32*)
+  (draw-text (format nil "beam ~d/10" (getf (tower-num *player*) :beam))
+	     (vec2 810 390) :fill-color *white* :font *font32*))
 
 ;;カーソルが重なてるタワーの説明
 (defun draw-tower-explain ()
@@ -568,10 +613,13 @@
        (tower-explain selected)
        (middle-explain "Right-Click" :str2 "CANCEL"))
       (now
-       (tower-explain now))
+       (tower-explain now)
+       (draw-tower-num))
       (now-tower
        (tower-explain now-tower)
-       (middle-explain "Right-Click" :str2 "UPGRADE")))))
+       (middle-explain "Right-Click" :str2 "UPGRADE"))
+      (t (draw-tower-num)))))
+       
 
 ;;HPバー
 (defun draw-hp-bar (e bar-y)
@@ -670,10 +718,10 @@
   ;; (cl-bodge:draw-image (gamekit:vec2 400 400) 48 48 (gamekit::resource-by-id :crab)
   ;;                                                   :scale-x 3 :scale-y 3
   ;;                                                   :translate-x 0)
-  (draw-text (format nil "viewport-w:~d" (viewport-width)) (vec2 10 500) :fill-color (vec4 1 1 1 1))
-  (draw-text (format nil "viewport-h:~d" (viewport-height)) (vec2 10 450)  :fill-color (vec4 1 1 1 1))
-  (draw-text (format nil "canvas-w:~d" (canvas-width)) (vec2 10 400)  :fill-color (vec4 1 1 1 1))
-  (draw-text (format nil "canvas-h:~d" (canvas-height)) (vec2 10 350)  :fill-color (vec4 1 1 1 1))
+  ;;(draw-text (format nil "viewport-w:~d" (viewport-width)) (vec2 10 500) :fill-color (vec4 1 1 1 1))
+  ;;(draw-text (format nil "viewport-h:~d" (viewport-height)) (vec2 10 450)  :fill-color (vec4 1 1 1 1))
+  ;;(draw-text (format nil "canvas-w:~d" (canvas-width)) (vec2 10 400)  :fill-color (vec4 1 1 1 1))
+  ;;(draw-text (format nil "canvas-h:~d" (canvas-height)) (vec2 10 350)  :fill-color (vec4 1 1 1 1))
   (draw-tower-explain)
   (draw-towers)
   (draw-bullets)
@@ -692,12 +740,16 @@
 (defun gameover-draw ()
   (gamekit:draw-rect (gamekit:vec2 0 0) (gamekit:viewport-width) (gamekit:viewport-height)
 		     :fill-paint (gamekit:vec4 0 0 0 1)) ;;TODO
+  (draw-text "GAME OVER" (vec2 25 500) :fill-color *white* :font *font300*)
+  (draw-text "GAME OVER" (vec2 33 500) :fill-color *white* :font *font300*)
   (draw-text "GAME OVER" (vec2 30 500) :fill-color *red* :font *font300*)
-  (draw-text (format nil "SCRE : ~d" (score *player*))
+  (draw-text (format nil "SCORE : ~d" (score *player*))
+	     (vec2 245 300) :fill-color *red* :font *font128*)
+  (draw-text (format nil "SCORE : ~d" (score *player*))
 	     (vec2 250 300) :fill-color *yellow* :font *font128*)
   (draw-text "RIGHT CLICK : RESTART"
 	     (vec2 250 200) :fill-color *green* :font *font64*)
-  (draw-text "ESC : GAME END"
+  (draw-text "    ESC     : GAME END"
 	     (vec2 250 150) :fill-color *blue* :font *font64*))
 ;;
 (defmethod gamekit:draw ((app mogevader))
@@ -968,7 +1020,7 @@
 			 (add-bullet e))
 		       (when (and (null moved?)
 				  (= num current)
-				  (zerop (mod frame (floor *invader-max* invader-max))))
+				  (zerop (mod frame (max 1 (floor *invader-max* invader-max)))))
 			 (incf current)
 			 (setf moved? t)
 			 (update-invader e wave)))))
@@ -1009,6 +1061,7 @@
 	:do (unless (invader-list w)
 	      (delete-obj w (invaders *invaders*)))))
 
+;;時間経過で金増える
 (defun update-money ()
   (with-slots (money money-c money-t) *player*
     (incf money-c)
@@ -1017,7 +1070,7 @@
       (setf money-c 0))))
 
 
-;;一番高いとこ理にいるインベーダー
+;;一番高いとこにいるインベーダー
 
 ;;インベーダー追加
 (defun add-invaders ()
@@ -1030,8 +1083,22 @@
     ;; (incf frame)
     ;; (when (zerop (mod frame 2000))
     ;;   (setf frame 0)
-    ;;   (create-invaders))))
-;;
+;;   (create-invaders))))
+
+;;残ってるタワーの数チェック
+(defun tower-check ()
+  (let ((c 0)
+	(m 0)
+	(b 0))
+    (loop :for tower :in (towers *player*)
+       :do (case (type-of tower)
+	     (canon (incf c))
+	     (missile (incf m))
+	     (beam (incf b))))
+    (setf (getf (tower-num *player*) :canon) c
+	  (getf (tower-num *player*) :missile) m
+	  (getf (tower-num *player*) :beam) b)))
+  ;;
 (defun incf-frame ()
   (incf (frame *invaders*)))
 
@@ -1046,6 +1113,7 @@
     
     (delete-invader-wave)
     (add-invaders)
+    (tower-check)
     (incf-frame)))
   ;;(delete-bullets))
 
